@@ -165,7 +165,7 @@ class AttentionField(nn.Module):
 
             # norm of vector midpoints, used for steering
             norm = np.linalg.norm((waypoints[i+1] + waypoints[i]) / 2.0)
-            if abs(self.aim_dist-best_norm) > abs(self.aim_dist-norm):
+            if abs(self.aim_dist-best_norm) > abs(self.aim_dist-norm): # min(abs(self.aim_dist-best_norm))
                 aim = waypoints[i]
                 best_norm = norm
 
@@ -214,6 +214,8 @@ class AttentionField(nn.Module):
             'angle_target': float(angle_target.astype(np.float64)),
             'angle_final': float(angle_final.astype(np.float64)),
             'delta': float(delta.astype(np.float64)),
+            # 'wp_2': tuple(waypoints[1].astype(np.float64)),
+            'wp_1': tuple(waypoints[0].astype(np.float64)),
         }
 
         return steer, throttle, brake, metadata
