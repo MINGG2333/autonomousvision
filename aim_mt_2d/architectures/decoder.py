@@ -33,9 +33,9 @@ class SegDecoder(nn.Module):
     def forward(self, x):
         x = sum(x)
         x = self.deconv1(x)
-        x = F.interpolate(x, scale_factor=8, mode='bilinear')
+        x = F.interpolate(x, scale_factor=8, mode='bilinear', align_corners=False)
         x = self.deconv2(x)
-        x = F.interpolate(x, scale_factor=4, mode='bilinear')
+        x = F.interpolate(x, scale_factor=4, mode='bilinear', align_corners=False)
         x = self.deconv3(x)
 
         return x
@@ -70,9 +70,9 @@ class DepthDecoder(nn.Module):
     def forward(self, x):
         x = sum(x)
         x = self.deconv1(x)
-        x = F.interpolate(x, scale_factor=8, mode='bilinear')
+        x = F.interpolate(x, scale_factor=8, mode='bilinear', align_corners=False)
         x = self.deconv2(x)
-        x = F.interpolate(x, scale_factor=4, mode='bilinear')
+        x = F.interpolate(x, scale_factor=4, mode='bilinear', align_corners=False)
         x = self.deconv3(x)
         x = torch.sigmoid(x).squeeze(1)
 

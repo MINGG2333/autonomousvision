@@ -156,7 +156,7 @@ class Encoder(nn.Module):
             bev_encoding_layer1 = torch.diagonal(bev_encoding_layer1, 0).permute(4,3,0,1,2).contiguous()
             bev_encoding_layer1 = torch.sum(bev_encoding_layer1, -1)
             bev_encoding_layer1 = self.image_projection1(bev_encoding_layer1.permute(0,2,3,1)).permute(0,3,1,2).contiguous()
-            lidar_features_layer1 = F.interpolate(bev_encoding_layer1, scale_factor=8, mode='bilinear')
+            lidar_features_layer1 = F.interpolate(bev_encoding_layer1, scale_factor=8, mode='bilinear', align_corners=False)
             lidar_features_layer1 = self.lidar_deconv1(lidar_features_layer1)
             lidar_features = lidar_features + lidar_features_layer1
 
@@ -166,7 +166,7 @@ class Encoder(nn.Module):
             img_encoding_layer1 = torch.diagonal(img_encoding_layer1, 0).permute(4,3,0,1,2).contiguous()
             img_encoding_layer1 = torch.sum(img_encoding_layer1, -1)
             img_encoding_layer1 = self.lidar_projection1(img_encoding_layer1.permute(0,2,3,1)).permute(0,3,1,2).contiguous()
-            image_features_layer1 = F.interpolate(img_encoding_layer1, scale_factor=8, mode='bilinear')
+            image_features_layer1 = F.interpolate(img_encoding_layer1, scale_factor=8, mode='bilinear', align_corners=False)
             image_features_layer1 = self.image_deconv1(image_features_layer1)
             image_features = image_features + image_features_layer1
 
@@ -187,7 +187,7 @@ class Encoder(nn.Module):
             bev_encoding_layer2 = torch.diagonal(bev_encoding_layer2, 0).permute(4,3,0,1,2).contiguous()
             bev_encoding_layer2 = torch.sum(bev_encoding_layer2, -1)
             bev_encoding_layer2 = self.image_projection1(bev_encoding_layer2.permute(0,2,3,1)).permute(0,3,1,2).contiguous()
-            lidar_features_layer2 = F.interpolate(bev_encoding_layer2, scale_factor=4, mode='bilinear')
+            lidar_features_layer2 = F.interpolate(bev_encoding_layer2, scale_factor=4, mode='bilinear', align_corners=False)
             lidar_features_layer2 = self.lidar_deconv2(lidar_features_layer2)
             lidar_features = lidar_features + lidar_features_layer2
 
@@ -197,7 +197,7 @@ class Encoder(nn.Module):
             img_encoding_layer2 = torch.diagonal(img_encoding_layer2, 0).permute(4,3,0,1,2).contiguous()
             img_encoding_layer2 = torch.sum(img_encoding_layer2, -1)
             img_encoding_layer2 = self.lidar_projection2(img_encoding_layer2.permute(0,2,3,1)).permute(0,3,1,2).contiguous()
-            image_features_layer2 = F.interpolate(img_encoding_layer2, scale_factor=4, mode='bilinear')
+            image_features_layer2 = F.interpolate(img_encoding_layer2, scale_factor=4, mode='bilinear', align_corners=False)
             image_features_layer2 = self.image_deconv2(image_features_layer2)
             image_features = image_features + image_features_layer2
 
@@ -218,7 +218,7 @@ class Encoder(nn.Module):
             bev_encoding_layer3 = torch.diagonal(bev_encoding_layer3, 0).permute(4,3,0,1,2).contiguous()
             bev_encoding_layer3 = torch.sum(bev_encoding_layer3, -1)
             bev_encoding_layer3 = self.image_projection3(bev_encoding_layer3.permute(0,2,3,1)).permute(0,3,1,2).contiguous()
-            lidar_features_layer3 = F.interpolate(bev_encoding_layer3, scale_factor=2, mode='bilinear')
+            lidar_features_layer3 = F.interpolate(bev_encoding_layer3, scale_factor=2, mode='bilinear', align_corners=False)
             lidar_features_layer3 = self.lidar_deconv3(lidar_features_layer3)
             lidar_features = lidar_features + lidar_features_layer3
 
@@ -228,7 +228,7 @@ class Encoder(nn.Module):
             img_encoding_layer3 = torch.diagonal(img_encoding_layer3, 0).permute(4,3,0,1,2).contiguous()
             img_encoding_layer3 = torch.sum(img_encoding_layer3, -1)
             img_encoding_layer3 = self.lidar_projection3(img_encoding_layer3.permute(0,2,3,1)).permute(0,3,1,2).contiguous()
-            image_features_layer3 = F.interpolate(img_encoding_layer3, scale_factor=2, mode='bilinear')
+            image_features_layer3 = F.interpolate(img_encoding_layer3, scale_factor=2, mode='bilinear', align_corners=False)
             image_features_layer3 = self.image_deconv3(image_features_layer3)
             image_features = image_features + image_features_layer3
 

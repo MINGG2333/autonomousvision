@@ -331,8 +331,8 @@ class Encoder(nn.Module):
         image_embd_layer1 = self.avgpool(image_features)
         lidar_embd_layer1 = self.avgpool(lidar_features)
         image_features_layer1, lidar_features_layer1, attn_map1 = self.transformer1(image_embd_layer1, lidar_embd_layer1, velocity)
-        image_features_layer1 = F.interpolate(image_features_layer1, scale_factor=8, mode='bilinear')
-        lidar_features_layer1 = F.interpolate(lidar_features_layer1, scale_factor=8, mode='bilinear')
+        image_features_layer1 = F.interpolate(image_features_layer1, scale_factor=8, mode='bilinear', align_corners=False)
+        lidar_features_layer1 = F.interpolate(lidar_features_layer1, scale_factor=8, mode='bilinear', align_corners=False)
         image_features = image_features + image_features_layer1
         lidar_features = lidar_features + lidar_features_layer1
 
@@ -342,8 +342,8 @@ class Encoder(nn.Module):
         image_embd_layer2 = self.avgpool(image_features)
         lidar_embd_layer2 = self.avgpool(lidar_features)
         image_features_layer2, lidar_features_layer2, attn_map2 = self.transformer2(image_embd_layer2, lidar_embd_layer2, velocity)
-        image_features_layer2 = F.interpolate(image_features_layer2, scale_factor=4, mode='bilinear')
-        lidar_features_layer2 = F.interpolate(lidar_features_layer2, scale_factor=4, mode='bilinear')
+        image_features_layer2 = F.interpolate(image_features_layer2, scale_factor=4, mode='bilinear', align_corners=False)
+        lidar_features_layer2 = F.interpolate(lidar_features_layer2, scale_factor=4, mode='bilinear', align_corners=False)
         image_features = image_features + image_features_layer2
         lidar_features = lidar_features + lidar_features_layer2
 
@@ -353,8 +353,8 @@ class Encoder(nn.Module):
         image_embd_layer3 = self.avgpool(image_features)
         lidar_embd_layer3 = self.avgpool(lidar_features)
         image_features_layer3, lidar_features_layer3, attn_map3 = self.transformer3(image_embd_layer3, lidar_embd_layer3, velocity)
-        image_features_layer3 = F.interpolate(image_features_layer3, scale_factor=2, mode='bilinear')
-        lidar_features_layer3 = F.interpolate(lidar_features_layer3, scale_factor=2, mode='bilinear')
+        image_features_layer3 = F.interpolate(image_features_layer3, scale_factor=2, mode='bilinear', align_corners=False)
+        lidar_features_layer3 = F.interpolate(lidar_features_layer3, scale_factor=2, mode='bilinear', align_corners=False)
         image_features = image_features + image_features_layer3
         lidar_features = lidar_features + lidar_features_layer3
 
