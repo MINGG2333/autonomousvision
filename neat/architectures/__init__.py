@@ -91,7 +91,7 @@ class AttentionField(nn.Module):
         linspace_x = torch.linspace(-scale * self.axis/2, scale * self.axis/2, steps=res)
         linspace_y = self.offset - torch.linspace(0, scale * self.axis, steps=res)
         linspace_t = torch.linspace(0, self.tot_len-1, steps=(self.tot_len))
-        grid_x, grid_y, grid_t = torch.meshgrid(linspace_x, linspace_y, linspace_t)
+        grid_x, grid_y, grid_t = torch.meshgrid(linspace_x, linspace_y, linspace_t, indexing='ij')
         grid_points = torch.stack((grid_x, grid_y, grid_t), dim=3).unsqueeze(0).repeat(batch_size,1,1,1,1)
         grid_points = grid_points.reshape(batch_size,-1,3).to(self.device, dtype=torch.float32)
 
@@ -102,7 +102,7 @@ class AttentionField(nn.Module):
         linspace_x = torch.linspace(0, self.axis/2, steps=x_steps) # currently hard-coded
         linspace_y = self.offset - torch.linspace(0, self.axis, steps=y_steps) # currently hard-coded
         linspace_t = torch.linspace(0, 1, steps=1)
-        grid_x, grid_y, grid_t = torch.meshgrid(linspace_x, linspace_y, linspace_t)
+        grid_x, grid_y, grid_t = torch.meshgrid(linspace_x, linspace_y, linspace_t, indexing='ij')
         grid_points = torch.stack((grid_x, grid_y, grid_t), dim=3).unsqueeze(0).repeat(batch_size,1,1,1,1)
         grid_points = grid_points.reshape(batch_size,-1,3).to(self.device, dtype=torch.float32)
 
