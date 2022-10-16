@@ -218,4 +218,4 @@ class AttentionField(nn.Module):
             'wp_1': tuple(waypoints[0].astype(np.float64)),
         }
 
-        return steer, throttle, brake, metadata
+        return steer, throttle, brake, metadata, waypoints
