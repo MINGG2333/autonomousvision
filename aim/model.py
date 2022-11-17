@@ -21,12 +21,12 @@ class ImageCNN(nn.Module):
         self.features.fc = nn.Sequential()
 
     def forward(self, inputs):
-    	c = 0
-    	for x in inputs:
-    		if self.normalize:
-    			x = normalize_imagenet(x)
-    		c += self.features(x)
-    	return c
+        c = 0
+        for x in inputs:
+            if self.normalize:
+                x = normalize_imagenet(x)
+            c += self.features(x)
+        return c
 
 def normalize_imagenet(x):
     """ Normalize input images according to ImageNet standards.
@@ -93,31 +93,31 @@ class AIM(nn.Module):
         self.output = nn.Linear(64, 2).to(self.device)
 
     def forward(self, feature_emb, target_point):
-    	'''
-		Predicts future waypoints from image features and target point (goal location)
-		Args:
-			feature_emb (list): list of feature tensors
-			target_point (tensor): goal location registered to ego-frame
-    	'''
-    	feature_emb = sum(feature_emb)
-    	z = self.join(feature_emb)
+        '''
+        Predicts future waypoints from image features and target point (goal location)
+        Args:
+            feature_emb (list): list of feature tensors
+            target_point (tensor): goal location registered to ego-frame
+        '''
+        feature_emb = sum(feature_emb)
+        z = self.join(feature_emb)
 
-    	output_wp = list()
+        output_wp = list()
 
-    	# initial input variable to GRU
-    	x = torch.zeros(size=(z.shape[0], 2), dtype=z.dtype).to(self.device)
+        # initial input variable to GRU
+        x = torch.zeros(size=(z.shape[0], 2), dtype=z.dtype).to(self.device)
 
-    	# autoregressive generation of output waypoints
-    	for _ in range(self.pred_len):
-    		x_in = torch.cat([x, target_point], dim=1)
-    		z = self.decoder(x_in, z)
-    		dx = self.output(z)
-    		x = dx + x
-    		output_wp.append(x)
+        # autoregressive generation of output waypoints
+        for _ in range(self.pred_len):
+            x_in = torch.cat([x, target_point], dim=1)
+            z = self.decoder(x_in, z)
+            dx = self.output(z)
+            x = dx + x
+            output_wp.append(x)
 
-    	pred_wp = torch.stack(output_wp, dim=1)
+        pred_wp = torch.stack(output_wp, dim=1)
 
-    	return pred_wp
+        return pred_wp
 
     def control_pid(self, waypoints, velocity):
         ''' 
