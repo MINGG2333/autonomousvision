@@ -21,6 +21,11 @@ from team_code.planner import RoutePlanner
 
 SAVE_PATH = os.environ.get('SAVE_PATH', None)
 
+# jxy: addition; add display; fix RoutePlanner
+from team_code.display import HAS_DISPLAY, Saver, debug_display
+from carla_project.src.common import CONVERTER, COLOR
+from carla_project.src.carla_env import draw_traffic_lights, get_nearby_lights
+
 
 def get_entry_point():
 	return 'MultiTaskAgent'
@@ -33,7 +38,7 @@ def scale_and_crop_image(image, scale=1, crop=256):
     # image = Image.open(filename)
     (width, height) = (image.width // scale, image.height // scale)
     im_resized = image.resize((width, height))
-    image = np.asarray(im_resized)
+    image = np.asarray(im_resized).copy()
     start_x = height//2 - crop//2
     start_y = width//2 - crop//2
     cropped_image = image[start_x:start_x+crop, start_y:start_y+crop]
@@ -50,10 +55,14 @@ class MultiTaskAgent(autonomous_agent.AutonomousAgent):
 		self.wall_start = time.time()
 		self.initialized = False
 
-		args_file = open(os.path.join(path_to_conf_file, 'args.txt'), 'r')
-		self.args = json.load(args_file)
-		args_file.close()
-		self.args['out_res'] = 100
+		return AgentSaver
+
+		# jxy in setup: rm as init_ads & save_path; add return AgentSaver
+	def init_ads(self, path_to_conf_file):
+		# args_file = open(os.path.join(path_to_conf_file, 'args.txt'), 'r')
+		# self.args = json.load(args_file)
+		# args_file.close()
+		# self.args['out_res'] = 100
 		self.input_buffer = {'rgb': deque(), 'rgb_left': deque(), 'rgb_right': deque()}
 
 		self.config = GlobalConfig()
@@ -67,29 +76,31 @@ class MultiTaskAgent(autonomous_agent.AutonomousAgent):
 		self.net.cuda()
 		self.net.eval()
 
-		self.save_path = None
-		if SAVE_PATH is not None:
-			now = datetime.datetime.now()
-			string = pathlib.Path(os.environ['ROUTES']).stem + '_'
-			string += '_'.join(map(lambda x: '%02d' % x, (now.month, now.day, now.hour, now.minute, now.second)))
+		# self.save_path = None
+		# if SAVE_PATH is not None:
+		# 	now = datetime.datetime.now()
+		# 	string = pathlib.Path(os.environ['ROUTES']).stem + '_'
+		# 	string += '_'.join(map(lambda x: '%02d' % x, (now.month, now.day, now.hour, now.minute, now.second)))
 
-			print (string)
+		# 	print (string)
 
-			self.save_path = pathlib.Path(os.environ['SAVE_PATH']) / string
-			self.save_path.mkdir(parents=True, exist_ok=False)
+		# 	self.save_path = pathlib.Path(os.environ['SAVE_PATH']) / string
+		# 	self.save_path.mkdir(parents=True, exist_ok=False)
 
-			(self.save_path / 'rgb').mkdir(parents=True, exist_ok=False)
-			(self.save_path / 'bev').mkdir(parents=True, exist_ok=False)
-			(self.save_path / 'flow').mkdir(parents=True, exist_ok=False)
-			(self.save_path / 'out').mkdir(parents=True, exist_ok=False)
-			(self.save_path / 'img').mkdir(parents=True, exist_ok=False)
-			(self.save_path / 'meta').mkdir(parents=True, exist_ok=False)
+		# 	(self.save_path / 'rgb').mkdir(parents=True, exist_ok=False)
+		# 	(self.save_path / 'bev').mkdir(parents=True, exist_ok=False)
+		# 	(self.save_path / 'flow').mkdir(parents=True, exist_ok=False)
+		# 	(self.save_path / 'out').mkdir(parents=True, exist_ok=False)
+		# 	(self.save_path / 'img').mkdir(parents=True, exist_ok=False)
+		# 	(self.save_path / 'meta').mkdir(parents=True, exist_ok=False)
 
 	def _init(self):
 		self._route_planner = RoutePlanner(4.0, 50.0)
 		self._route_planner.set_route(self._global_plan, True)
 
 		self.initialized = True
+
+		super()._init() # jxy add
 
 	def _get_position(self, tick_data):
 		gps = tick_data['gps']
@@ -152,7 +163,15 @@ class MultiTaskAgent(autonomous_agent.AutonomousAgent):
 					'type': 'sensor.speedometer',
 					'reading_frequency': 20,
 					'id': 'speed'
-					}
+					},
+				# jxy: addition
+				{
+					'type': 'sensor.camera.semantic_segmentation',
+					'x': 0.0, 'y': 0.0, 'z': 100.0,
+					'roll': 0.0, 'pitch': -90.0, 'yaw': 0.0,
+					'width': 512, 'height': 512, 'fov': 5 * 10.0,
+					'id': 'map'
+					},
 				]
 
 	def tick(self, input_data):
@@ -192,6 +211,17 @@ class MultiTaskAgent(autonomous_agent.AutonomousAgent):
 		local_command_point = R.T.dot(local_command_point)
 		result['target_point'] = tuple(local_command_point)
 
+		# jxy addition:
+		result['far_command'] = next_cmd
+
+		result['R_pos_from_head'] = R
+		result['offset_pos'] = np.array([pos[0], pos[1]])
+
+		self._actors = self._world.get_actors()
+		self._traffic_lights = get_nearby_lights(self._vehicle, self._actors.filter('*traffic_light*'))
+		topdown = input_data['map'][1][:, :, 2]
+		topdown = draw_traffic_lights(topdown, self._vehicle, self._traffic_lights)
+		result['topdown'] = COLOR[CONVERTER[topdown]]
 		return result
 
 	@torch.no_grad()
@@ -213,7 +243,8 @@ class MultiTaskAgent(autonomous_agent.AutonomousAgent):
 			control.steer = 0.0
 			control.throttle = 0.0
 			control.brake = 0.0
-			
+
+			self.record_step(tick_data, control) # jxy: add
 			return control
 
 		tick_data['target_point'] = [torch.FloatTensor([tick_data['target_point'][0]]),
@@ -245,7 +276,8 @@ class MultiTaskAgent(autonomous_agent.AutonomousAgent):
 		encoding = self.net.encoder(images, gt_velocity)
 		
 		pred_waypoint_mean, red_light_occ = self.net.plan(target_point, encoding, self.plan_grid, self.light_grid, self.config.plan_points, self.config.plan_iters)
-		steer, throttle, brake, metadata = self.net.control_pid(pred_waypoint_mean[:, self.config.seq_len:], gt_velocity, target_point, red_light_occ)
+		 # jxy: points_world
+		steer, throttle, brake, metadata, points_world = self.net.control_pid(pred_waypoint_mean[:, self.config.seq_len:], gt_velocity, target_point, red_light_occ)
 
 		self.encoding_model = encoding
 		self.pred_waypoint_mean_model = pred_waypoint_mean
@@ -263,92 +295,200 @@ class MultiTaskAgent(autonomous_agent.AutonomousAgent):
 		control.throttle = throttle
 		control.brake = brake
 
-		if SAVE_PATH is not None and self.step % 10 == 0:
-			self.save(tick_data)
+		if HAS_DISPLAY: # jxy: change
+			debug_display(tick_data, control.steer, control.throttle, control.brake, self.step)
 
+		self.record_step(tick_data, control, points_world) # jxy: add
 		return control
 
-	def save(self, tick_data):
-		frame = self.step // 10
+	# jxy: add record_step
+	def record_step(self, tick_data, control, pred_waypoint=[]):
+		# draw pred_waypoint
+		if len(pred_waypoint):
+			pred_waypoint[:,1] *= -1
+			pred_waypoint = tick_data['R_pos_from_head'].dot(pred_waypoint.T).T
+		self._route_planner.run_step2(pred_waypoint, is_gps=False, store=False) # metadata['wp_1'] relative to ego head (as y)
+		# addition: from leaderboard/team_code/auto_pilot.py
+		speed = tick_data['speed']
+		self._recorder_tick(control) # trjs
+		ego_bbox = self.gather_info() # metrics
+		self._route_planner.run_step2(ego_bbox + tick_data['offset_pos'], is_gps=True, store=False)
+		self._route_planner.show_route()
 
-		Image.fromarray(tick_data['rgb_front']).save(self.save_path / 'rgb' / ('%04d.png' % frame))
-		Image.fromarray(tick_data['bev']).save(self.save_path / 'bev' / ('%04d.png' % frame))
+		if self.save_path is not None and self.step % self.record_every_n_step == 0:
+			self.save(control.steer, control.throttle, control.brake, tick_data)
 
-		outfile = open(self.save_path / 'meta' / ('%04d.json' % frame), 'w')
-		json.dump(self.pid_metadata, outfile, indent=4)
-		outfile.close()
 
-		# grid used for visualizing occupancy and flow
-		linspace_x = torch.linspace(-self.config.axis/2, self.config.axis/2, steps=self.args['out_res'])
-		linspace_y = torch.linspace(-self.config.axis/2, self.config.axis/2, steps=self.args['out_res'])
-		linspace_t = torch.linspace(0, self.config.tot_len - 1, steps=self.config.tot_len)
+# jxy: mv save in AgentSaver & rm destroy
+class AgentSaver(Saver):
+	def __init__(self, path_to_conf_file, dict_, list_):
+		self.config_path = path_to_conf_file
 
-		for i in range(self.config.seq_len):
-			# save one sample per batch
-			front_numpy = (self.input_buffer['rgb'][i][0].data.cpu().numpy().transpose((1, 2, 0))).astype(np.uint8)
-			left_numpy = (self.input_buffer['rgb_left'][i][0].data.cpu().numpy().transpose((1, 2, 0))).astype(np.uint8)
-			right_numpy = (self.input_buffer['rgb_right'][i][0].data.cpu().numpy().transpose((1, 2, 0))).astype(np.uint8)
-			image_numpy = np.concatenate([left_numpy,front_numpy,right_numpy], axis=1)
-			image_display = Image.fromarray(image_numpy)
-			if not os.path.isdir(self.save_path / 'img' / str(frame).zfill(4)):
-				os.mkdir(self.save_path / 'img' / str(frame).zfill(4))
-			image_display.save(f"{self.save_path}/img/{str(frame).zfill(4)}/{str(i)}.png")
+		# addition
+		self.rgb_list = ['rgb', 'rgb_left', 'rgb_right', 'rgb_front', 'bev', 'topdown', ] # 
+		self.add_img = [] # 'flow', 'out', 
+		self.lidar_list = [] # 'lidar_0', 'lidar_1',
+		self.dir_names = self.rgb_list + self.add_img + self.lidar_list + ['pid_metadata']
 
-		# target point in pixel coordinates
-		target_point_pixel = self.target_point_model.squeeze().cpu().numpy()
-		target_point_pixel[1] += self.config.offset * self.config.resolution
+		super().__init__(dict_, list_)
 
-		# hack for when actual target is outside image (axis/2 * resolution)
-		target_point_pixel = np.clip(target_point_pixel, -(self.config.axis/2 * self.config.resolution - 1), (self.config.axis/2 * self.config.resolution - 1)) 
-		target_point_pixel = (target_point_pixel*self.args['out_res']//50 + self.args['out_res']//2).astype(np.uint8)
-		
-		for i in range(self.config.tot_len):
-			# predicted waypoint in pixel coordinates
-			pred_waypoint = self.pred_waypoint_mean_model[0,i].data.cpu().numpy()
-			pred_waypoint[1] += self.config.offset * self.config.resolution
-			pred_waypoint = np.clip(pred_waypoint, -(self.config.axis/2 * self.config.resolution - 1), (self.config.axis/2 * self.config.resolution - 1)) 
-			pred_waypoint = (pred_waypoint*self.args['out_res']//(self.config.axis * self.config.resolution) + self.args['out_res']//2).astype(np.uint8)
+	def run(self): # jxy: according to init_ads
+		# path_to_conf_file = self.config_path
+		# self.args = dict()
+		# with open(os.path.join(path_to_conf_file, 'args.txt'), 'r') as args_file:
+		# 	self.args = json.load(args_file)
+		# self.args['out_res'] = 100
+
+		self.config = GlobalConfig()
+		# self.net = AttentionField(self.config, 'cuda')
+		# self.net.encoder.load_state_dict(torch.load(os.path.join(path_to_conf_file, 'best_encoder.pth')))
+		# self.net.decoder.load_state_dict(torch.load(os.path.join(path_to_conf_file, 'best_decoder.pth')))
+
+		# self.plan_grid = self.net.create_plan_grid(self.config.plan_scale, self.config.plan_points, 1)
+		# self.light_grid = self.net.create_light_grid(self.config.light_x_steps, self.config.light_y_steps, 1)
+
+		# self.net.cuda()
+		# self.net.eval()
+
+		super().run()
+
+	def _save(self, tick_data):	
+		# addition
+		# save_action_based_measurements = tick_data['save_action_based_measurements']
+		self.save_path = tick_data['save_path']
+		if not (self.save_path / 'ADS_log.csv' ).exists():
+			# addition: jxy generate dir for every totali
+			self.save_path.mkdir(parents=True, exist_ok=True)
+			for dir_name in self.dir_names:
+				(self.save_path / dir_name).mkdir(parents=True, exist_ok=False)
+
+			# according to self.save data_row_list
+			title_row = ','.join(
+				['frame_id', 'far_command', 'speed', 'steering', 'throttle', 'brake',] + \
+				self.dir_names
+			)
+			with (self.save_path / 'ADS_log.csv' ).open("a") as f_out:
+				f_out.write(title_row+'\n')
+
+		self.step = tick_data['frame']
+		self.save(tick_data['steer'],tick_data['throttle'],tick_data['brake'], tick_data)
+
+	# addition: modified from leaderboard/team_code/auto_pilot.py jxy: add data_row_list
+	def save(self, steer, throttle, brake, tick_data):
+		# frame = self.step // 10
+		frame = self.step
+
+		# 'gps' 'thetas'
+		pos = tick_data['gps']
+		speed = tick_data['speed']
+		far_command = tick_data['far_command']
+		data_row_list = [frame, far_command.name, speed, steer, throttle, brake,]
+
+		if frame >= self.config.seq_len:
+			# images
+			for rgb_name in self.rgb_list + self.add_img:
+				path_ = self.save_path / rgb_name / ('%04d.png' % frame)
+				Image.fromarray(tick_data[rgb_name]).save(path_)
+				data_row_list.append(str(path_))
+			# lidar
+			for i, rgb_name in enumerate(self.lidar_list):
+				path_ = self.save_path / rgb_name / ('%04d.png' % frame)
+				# Image.fromarray(cm.gist_earth(self.lidar_processed[0].cpu().numpy()[0, i], bytes=True)).save(path_)
+				data_row_list.append(str(path_))
+
+			# pid_metadata
+			pid_metadata = tick_data['pid_metadata']
+			path_ = self.save_path / 'pid_metadata' / ('%04d.json' % frame)
+			outfile = open(path_, 'w')
+			json.dump(pid_metadata, outfile, indent=4)
+			outfile.close()
+			data_row_list.append(str(path_))
+
+		# collection
+		data_row = ','.join([str(i) for i in data_row_list])
+		with (self.save_path / 'ADS_log.csv' ).open("a") as f_out:
+			f_out.write(data_row+'\n')
+
+	# def save(self, tick_data):
+	# 	frame = self.step // 10
+
+	# 	Image.fromarray(tick_data['rgb_front']).save(self.save_path / 'rgb' / ('%04d.png' % frame))
+	# 	Image.fromarray(tick_data['bev']).save(self.save_path / 'bev' / ('%04d.png' % frame))
+
+	# 	outfile = open(self.save_path / 'meta' / ('%04d.json' % frame), 'w')
+	# 	json.dump(self.pid_metadata, outfile, indent=4)
+	# 	outfile.close()
+
+	# 	# grid used for visualizing occupancy and flow
+	# 	linspace_x = torch.linspace(-self.config.axis/2, self.config.axis/2, steps=self.args['out_res'])
+	# 	linspace_y = torch.linspace(-self.config.axis/2, self.config.axis/2, steps=self.args['out_res'])
+	# 	linspace_t = torch.linspace(0, self.config.tot_len - 1, steps=self.config.tot_len)
+
+	# 	for i in range(self.config.seq_len):
+	# 		# save one sample per batch
+	# 		front_numpy = (self.input_buffer['rgb'][i][0].data.cpu().numpy().transpose((1, 2, 0))).astype(np.uint8)
+	# 		left_numpy = (self.input_buffer['rgb_left'][i][0].data.cpu().numpy().transpose((1, 2, 0))).astype(np.uint8)
+	# 		right_numpy = (self.input_buffer['rgb_right'][i][0].data.cpu().numpy().transpose((1, 2, 0))).astype(np.uint8)
+	# 		image_numpy = np.concatenate([left_numpy,front_numpy,right_numpy], axis=1)
+	# 		image_display = Image.fromarray(image_numpy)
+	# 		if not os.path.isdir(self.save_path / 'img' / str(frame).zfill(4)):
+	# 			os.mkdir(self.save_path / 'img' / str(frame).zfill(4))
+	# 		image_display.save(f"{self.save_path}/img/{str(frame).zfill(4)}/{str(i)}.png")
+
+	# 	# target point in pixel coordinates
+	# 	target_point_pixel = self.target_point_model.squeeze().cpu().numpy()
+	# 	target_point_pixel[1] += self.config.offset * self.config.resolution
+
+	# 	# hack for when actual target is outside image (axis/2 * resolution)
+	# 	target_point_pixel = np.clip(target_point_pixel, -(self.config.axis/2 * self.config.resolution - 1), (self.config.axis/2 * self.config.resolution - 1)) 
+	# 	target_point_pixel = (target_point_pixel*self.args['out_res']//50 + self.args['out_res']//2).astype(np.uint8)
+
+	# 	for i in range(self.config.tot_len):
+	# 		# predicted waypoint in pixel coordinates
+	# 		pred_waypoint = self.pred_waypoint_mean_model[0,i].data.cpu().numpy()
+	# 		pred_waypoint[1] += self.config.offset * self.config.resolution
+	# 		pred_waypoint = np.clip(pred_waypoint, -(self.config.axis/2 * self.config.resolution - 1), (self.config.axis/2 * self.config.resolution - 1)) 
+	# 		pred_waypoint = (pred_waypoint*self.args['out_res']//(self.config.axis * self.config.resolution) + self.args['out_res']//2).astype(np.uint8)
+
+	# 		# visualization of occupancy and flow
+	# 		img_rows = []
+	# 		flow_rows = []
+	# 		for row in range(self.args['out_res']):
+	# 			grid_x, grid_y, grid_t = torch.meshgrid(linspace_x, linspace_y[row], linspace_t[i].unsqueeze(0))
+	# 			grid_points = torch.stack((grid_x, grid_y, grid_t), dim=3).unsqueeze(0).repeat(1,1,1,1,1)
+	# 			grid_points = grid_points.reshape(1,-1,3).to('cuda', dtype=torch.float32)
+	# 			pred_img_pts, pred_img_offsets, _ = self.net.decode(grid_points, self.target_point_model, self.encoding_model)
+	# 			pred_img_pts = torch.argmax(pred_img_pts[-1], dim=1)
+	# 			pred_img = pred_img_pts.reshape(1,self.args['out_res'])
+	# 			pred_flow = pred_img_offsets[-1].reshape(1,2,self.args['out_res'])
+	# 			img_rows.append(pred_img)
+	# 			flow_rows.append(pred_flow)
 			
-			# visualization of occupancy and flow
-			img_rows = []
-			flow_rows = []
-			for row in range(self.args['out_res']):
-				grid_x, grid_y, grid_t = torch.meshgrid(linspace_x, linspace_y[row], linspace_t[i].unsqueeze(0))
-				grid_points = torch.stack((grid_x, grid_y, grid_t), dim=3).unsqueeze(0).repeat(1,1,1,1,1)
-				grid_points = grid_points.reshape(1,-1,3).to('cuda', dtype=torch.float32)
-				pred_img_pts, pred_img_offsets, _ = self.net.decode(grid_points, self.target_point_model, self.encoding_model)
-				pred_img_pts = torch.argmax(pred_img_pts[-1], dim=1)
-				pred_img = pred_img_pts.reshape(1,self.args['out_res'])
-				pred_flow = pred_img_offsets[-1].reshape(1,2,self.args['out_res'])
-				img_rows.append(pred_img)
-				flow_rows.append(pred_flow)
-			
-			pred_img = torch.stack(img_rows, dim=-1)
-			pred_flow = torch.stack(flow_rows, dim=-1)
+	# 		pred_img = torch.stack(img_rows, dim=-1)
+	# 		pred_flow = torch.stack(flow_rows, dim=-1)
 
-			semantics = pred_img[0,:,:].transpose(1, 0).data.cpu().numpy().astype(np.uint8)
-			semantic_display = np.zeros((semantics.shape[0], semantics.shape[1], 3))
-			for key, value in self.config.classes.items():
-				semantic_display[np.where(semantics == key)] = value
-			semantic_display = semantic_display.astype(np.uint8)
-			semantic_display = Image.fromarray(semantic_display)
-			if not os.path.isdir(self.save_path / 'out' / str(frame).zfill(4)):
-				os.mkdir(self.save_path / 'out' / str(frame).zfill(4))
-			semantic_display.save(f"{self.save_path}/out/{str(frame).zfill(4)}/{str(i)}.png")
+	# 		semantics = pred_img[0,:,:].transpose(1, 0).data.cpu().numpy().astype(np.uint8)
+	# 		semantic_display = np.zeros((semantics.shape[0], semantics.shape[1], 3))
+	# 		for key, value in self.config.classes.items():
+	# 			semantic_display[np.where(semantics == key)] = value
+	# 		semantic_display = semantic_display.astype(np.uint8)
+	# 		semantic_display = Image.fromarray(semantic_display)
+	# 		if not os.path.isdir(self.save_path / 'out' / str(frame).zfill(4)):
+	# 			os.mkdir(self.save_path / 'out' / str(frame).zfill(4))
+	# 		semantic_display.save(f"{self.save_path}/out/{str(frame).zfill(4)}/{str(i)}.png")
 
-			# flow image of predicted offsets
-			flow_uv = pred_flow[0,:,:,:].transpose(2,0).data.cpu().numpy()*self.args['out_res']/self.config.axis
-			flow_rgb = flow_to_color(flow_uv)
+	# 		# flow image of predicted offsets
+	# 		flow_uv = pred_flow[0,:,:,:].transpose(2,0).data.cpu().numpy()*self.args['out_res']/self.config.axis
+	# 		flow_rgb = flow_to_color(flow_uv)
 
-			flow_display = Image.fromarray(flow_rgb)
-			draw = ImageDraw.Draw(flow_display)
-			draw.ellipse([tuple(target_point_pixel-1), tuple(target_point_pixel+1)], fill='Blue', outline='Blue')
-			draw.ellipse([tuple(pred_waypoint-1), tuple(pred_waypoint+1)], fill='Red', outline='Red')
-			if not os.path.isdir(self.save_path / 'flow' / str(frame).zfill(4)):
-				os.mkdir(self.save_path / 'flow' / str(frame).zfill(4))
-			flow_display.save(f"{self.save_path}/flow/{str(frame).zfill(4)}/{str(i)}.png")
+	# 		flow_display = Image.fromarray(flow_rgb)
+	# 		draw = ImageDraw.Draw(flow_display)
+	# 		draw.ellipse([tuple(target_point_pixel-1), tuple(target_point_pixel+1)], fill='Blue', outline='Blue')
+	# 		draw.ellipse([tuple(pred_waypoint-1), tuple(pred_waypoint+1)], fill='Red', outline='Red')
+	# 		if not os.path.isdir(self.save_path / 'flow' / str(frame).zfill(4)):
+	# 			os.mkdir(self.save_path / 'flow' / str(frame).zfill(4))
+	# 		flow_display.save(f"{self.save_path}/flow/{str(frame).zfill(4)}/{str(i)}.png")
 
-	def destroy(self):
-		del self.net
-
+	# def destroy(self):
+	# 	del self.net
 
