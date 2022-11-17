@@ -15,27 +15,32 @@ from team_code.pid_controller import PIDController
 
 
 WEATHERS = {
-        'ClearNoon': carla.WeatherParameters.ClearNoon,
-        'ClearSunset': carla.WeatherParameters.ClearSunset,
+        'Clear': carla.WeatherParameters.ClearNoon,
 
-        'CloudyNoon': carla.WeatherParameters.CloudyNoon,
-        'CloudySunset': carla.WeatherParameters.CloudySunset,
+        'Cloudy': carla.WeatherParameters.CloudySunset,
 
-        'WetNoon': carla.WeatherParameters.WetNoon,
-        'WetSunset': carla.WeatherParameters.WetSunset,
+        'Wet': carla.WeatherParameters.WetSunset,
 
-        'MidRainyNoon': carla.WeatherParameters.MidRainyNoon,
-        'MidRainSunset': carla.WeatherParameters.MidRainSunset,
+        'MidRain': carla.WeatherParameters.MidRainSunset,
 
-        'WetCloudyNoon': carla.WeatherParameters.WetCloudyNoon,
-        'WetCloudySunset': carla.WeatherParameters.WetCloudySunset,
+        'WetCloudy': carla.WeatherParameters.WetCloudySunset,
 
-        'HardRainNoon': carla.WeatherParameters.HardRainNoon,
-        'HardRainSunset': carla.WeatherParameters.HardRainSunset,
+        'HardRain': carla.WeatherParameters.HardRainNoon,
 
-        'SoftRainNoon': carla.WeatherParameters.SoftRainNoon,
-        'SoftRainSunset': carla.WeatherParameters.SoftRainSunset,
+        'SoftRain': carla.WeatherParameters.SoftRainSunset,
 }
+
+azimuths = [45.0 * i for i in range(8)]
+
+daytimes = {
+    'Night': -80.0,
+    'Twilight': 0.0,
+    'Dawn': 5.0,
+    'Sunset': 15.0,
+    'Morning': 35.0,
+    'Noon': 75.0,
+}
+
 WEATHERS_IDS = list(WEATHERS)
 
 
@@ -73,18 +78,6 @@ def get_collision(p1, v1, p2, v2):
     return collides, p1 + x[0] * v1
 
 
-def check_episode_has_noise(lat_noise_percent, long_noise_percent):
-    lat_noise = False
-    long_noise = False
-    if random.randint(0, 101) < lat_noise_percent:
-        lat_noise = True
-
-    if random.randint(0, 101) < long_noise_percent:
-        long_noise = True
-
-    return lat_noise, long_noise
-
-
 class AutoPilot(MapAgent):
 
     # for stop signs
@@ -94,9 +87,12 @@ class AutoPilot(MapAgent):
 
     def setup(self, path_to_conf_file):
         super().setup(path_to_conf_file)
-            
+
     def _init(self):
         super()._init()
+
+        self.angle = 0.0
+        self.junction = False
 
         self._turn_controller = PIDController(K_P=1.25, K_I=0.75, K_D=0.3, n=40)
         self._speed_controller = PIDController(K_P=5.0, K_I=0.5, K_D=1.0, n=40)
@@ -105,6 +101,8 @@ class AutoPilot(MapAgent):
         self._target_stop_sign = None # the stop sign affecting the ego vehicle
         self._stop_completed = False # if the ego vehicle has completed the stop sign
         self._affected_by_stop = False # if the ego vehicle is influenced by a stop sign
+
+        self._vehicle.set_light_state(carla.VehicleLightState.HighBeam)
 
     def _get_angle_to(self, pos, theta, target):
         R = np.array([
@@ -118,10 +116,7 @@ class AutoPilot(MapAgent):
 
         return angle
 
-    def _get_control(self, target, far_target, tick_data):
-        pos = self._get_position(tick_data)
-        theta = tick_data['compass']
-        speed = tick_data['speed']
+    def _get_control(self, target, far_target, pos, speed, theta, _draw=None):
 
         # Steering.
         angle_unnorm = self._get_angle_to(pos, theta, target)
@@ -137,13 +132,13 @@ class AutoPilot(MapAgent):
         target_speed = 4.0 if should_slow else 7.0
         brake = self._should_brake()
         target_speed = target_speed if not brake else 0.0
-        
+
         self.should_slow = int(should_slow)
         self.should_brake = int(brake)
         self.angle = angle
         self.angle_unnorm = angle_unnorm
         self.angle_far_unnorm = angle_far_unnorm
-        
+
         delta = np.clip(target_speed - speed, 0.0, 0.25)
         throttle = self._speed_controller.step(delta)
         throttle = np.clip(throttle, 0.0, 0.75)
@@ -159,28 +154,39 @@ class AutoPilot(MapAgent):
             self._init()
 
         # change weather for visual diversity
-        if self.step % 10 == 0:
+        if self.step % 10 == 0 and self.save_path is not None:
             index = random.choice(range(len(WEATHERS)))
-            self.weather_id = WEATHERS_IDS[index]
+            dtime, altitude = random.choice(list(daytimes.items()))
+            altitude = np.random.normal(altitude, 10)
+            self.weather_id = WEATHERS_IDS[index] + dtime
+
             weather = WEATHERS[WEATHERS_IDS[index]]
-            print (self.weather_id, weather)
+            weather.sun_altitude_angle = altitude
+            weather.sun_azimuth_angle = np.random.choice(azimuths)
+
             self._world.set_weather(weather)
 
-        data = self.tick(input_data)
-        gps = self._get_position(data)
+        self.step += 1
+        gps = self._get_position(input_data['gps'][1][:2])
+        speed = input_data['speed'][1]['speed']
+        compass = input_data['imu'][1][-1]
 
         near_node, near_command = self._waypoint_planner.run_step(gps)
         far_node, far_command = self._command_planner.run_step(gps)
 
-        steer, throttle, brake, target_speed = self._get_control(near_node, far_node, data)
+        _draw = None
+
+        steer, throttle, brake, target_speed = self._get_control(near_node, far_node, gps, speed, compass, _draw)
 
         control = carla.VehicleControl()
         control.steer = steer + 1e-2 * np.random.randn()
         control.throttle = throttle
         control.brake = float(brake)
 
+        # don't save data while evaluating
         if self.step % 10 == 0 and self.save_path is not None:
-            self.save(near_node, far_node, near_command, steer, throttle, brake, target_speed, data)
+            data = self.tick(input_data)
+            self.save(far_node, near_command, steer, throttle, brake, target_speed, data)
 
         return control
 
@@ -192,14 +198,16 @@ class AutoPilot(MapAgent):
         walker = self._is_walker_hazard(actors.filter('*walker*'))
         stop_sign = self._is_stop_sign_hazard(actors.filter('*stop*'))
 
-        self.is_vehicle_present = 1 if vehicle is not None else 0
-        self.is_red_light_present = 1 if light is not None else 0
-        self.is_pedestrian_present = 1 if walker is not None else 0
-        self.is_stop_sign_present = 1 if stop_sign is not None else 0
+        self.vehicle_hazard = 1 if vehicle is not None else 0
+        self.traffic_light_hazard = 1 if light is not None else 0
+        self.walker_hazard = 1 if walker is not None else 0
+        self.stop_sign_hazard = 1 if stop_sign is not None else 0
 
         return any(x is not None for x in [vehicle, light, walker, stop_sign])
 
-    def _point_inside_boundingbox(self, point, bb_center, bb_extent):
+    @staticmethod
+    def point_inside_boundingbox(point, bb_center, bb_extent):
+
         A = carla.Vector2D(bb_center.x - bb_extent.x, bb_center.y - bb_extent.y)
         B = carla.Vector2D(bb_center.x + bb_extent.x, bb_center.y - bb_extent.y)
         D = carla.Vector2D(bb_center.x - bb_extent.x, bb_center.y + bb_extent.y)
@@ -254,7 +262,7 @@ class AutoPilot(MapAgent):
                 list_locations.append(waypoint.transform.location)
 
         for actor_location in list_locations:
-            if self._point_inside_boundingbox(actor_location, transformed_tv, stop.trigger_volume.extent):
+            if self.point_inside_boundingbox(actor_location, transformed_tv, stop.trigger_volume.extent):
                 affected = True
 
         return affected
