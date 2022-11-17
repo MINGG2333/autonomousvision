@@ -6,6 +6,9 @@ from srunner.scenariomanager.carla_data_provider import CarlaDataProvider
 from team_code.base_agent import BaseAgent
 from team_code.planner import RoutePlanner
 
+def get_entry_point():
+    return 'MapAgent'
+
 
 class MapAgent(BaseAgent):
     def sensors(self):
