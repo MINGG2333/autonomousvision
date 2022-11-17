@@ -17,7 +17,7 @@ class ImageCNN(nn.Module):
     def __init__(self, c_dim, normalize=True):
         super().__init__()
         self.normalize = normalize
-        self.features = models.resnet34(pretrained=True)
+        self.features = models.resnet34(weights=models.ResNet34_Weights.IMAGENET1K_V1)
         self.features.fc = nn.Sequential()
 
     def forward(self, inputs):

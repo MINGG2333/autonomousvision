@@ -145,7 +145,7 @@ class ImageCNN(nn.Module):
         super().__init__()
         self.normalize = normalize
         self.avgpool = nn.AdaptiveAvgPool2d((vert_anchors, horz_anchors))
-        self.features = models.resnet34(pretrained=True)
+        self.features = models.resnet34(weights=models.ResNet34_Weights.IMAGENET1K_V1)
 
     def forward(self, x):
 

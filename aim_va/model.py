@@ -130,7 +130,7 @@ class ImageCNN(nn.Module):
         super().__init__()
         self.use_linear = use_linear
             
-        self.features = models.resnet34(pretrained=True)
+        self.features = models.resnet34(weights=models.ResNet34_Weights.IMAGENET1K_V1)
 
         self.features.fc = nn.Sequential()
 

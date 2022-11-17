@@ -23,11 +23,11 @@ class ImageCNN(nn.Module):
         self.model_type = kwargs.get('model_type')
 
         if self.model_type == 'resnet18':
-            self.features = resnet18(pretrained=True)
+            self.features = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
             self.features.fc = nn.Sequential()
 
         elif self.model_type == 'resnet34':
-            self.features = resnet34(pretrained=True)
+            self.features = models.resnet34(weights=models.ResNet34_Weights.IMAGENET1K_V1)
             self.features.fc = nn.Sequential()
 
         if use_linear:
