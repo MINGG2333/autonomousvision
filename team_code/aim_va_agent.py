@@ -32,7 +32,7 @@ def crop_image(image, crop_width_factor):
 	"""
 	image = Image.fromarray(image)
 	(width, height) = (image.width, image.height)
-	image = np.asarray(image)
+	image = np.asarray(image).copy()
 	crop = int(crop_width_factor * width)
 	start_x = height//2 - crop//2
 	start_y = width//2 - crop//2
@@ -47,7 +47,7 @@ def scale_image(image, scale):
 	image = Image.fromarray(image)
 	(width, height) = (image.width // scale, image.height // scale)
 	im_resized = image.resize((width, height), resample=Image.NEAREST)
-	image = np.asarray(im_resized)
+	image = np.asarray(im_resized).copy()
 	return image
 
 

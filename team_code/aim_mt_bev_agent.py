@@ -31,7 +31,7 @@ def scale_and_crop_image(image, scale=1, crop=256):
     """
     (width, height) = (image.width // scale, image.height // scale)
     im_resized = image.resize((width, height))
-    image = np.asarray(im_resized)
+    image = np.asarray(im_resized).copy()
     start_x = height//2 - crop//2
     start_y = width//2 - crop//2
     cropped_image = image[start_x:start_x+crop, start_y:start_y+crop]

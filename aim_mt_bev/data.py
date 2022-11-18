@@ -274,7 +274,7 @@ def scale_and_crop_image(filename, scale, crop):
     else:
         im_resized = image
 
-    image = np.asarray(im_resized)
+    image = np.asarray(im_resized).copy()
     start_y = height//2 - crop//2
     start_x = width//2 - crop//2
 

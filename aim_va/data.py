@@ -235,7 +235,7 @@ def scale_and_crop_image(filename, scale, crop_width_factor):
     image = Image.open(filename)
     (width, height) = (image.width // scale, image.height // scale)
     im_resized = image.resize((width, height), resample=Image.NEAREST)
-    image = np.asarray(im_resized)
+    image = np.asarray(im_resized).copy()
     crop = int(crop_width_factor * width)
     start_x = height//2 - crop//2
     start_y = width//2 - crop//2
