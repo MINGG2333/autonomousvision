@@ -21,6 +21,11 @@ from team_code.planner import RoutePlanner
 
 SAVE_PATH = os.environ.get('SAVE_PATH', None)
 
+# jxy: addition; (add display.py and fix RoutePlanner.py)
+from team_code.display import HAS_DISPLAY, Saver, debug_display
+from carla_project.src.common import CONVERTER, COLOR
+from carla_project.src.carla_env import draw_traffic_lights, get_nearby_lights
+
 
 def get_entry_point():
 	return 'CILRSAgent'
@@ -34,6 +39,11 @@ class CILRSAgent(autonomous_agent.AutonomousAgent):
 		self.wall_start = time.time()
 		self.initialized = False
 
+		return AgentSaver
+
+		# jxy: add return AgentSaver and init_ads (setup keep 5 lines); rm save_path;
+	def init_ads(self, path_to_conf_file):
+
 		self.input_buffer = {'rgb': deque(), 'rgb_left': deque(), 'rgb_right': deque(), 'rgb_rear': deque()}
 
 		self.config = GlobalConfig()
@@ -42,24 +52,26 @@ class CILRSAgent(autonomous_agent.AutonomousAgent):
 		self.net.cuda()
 		self.net.eval()
 
-		self.save_path = None
-		if SAVE_PATH is not None:
-			now = datetime.datetime.now()
-			string = pathlib.Path(os.environ['ROUTES']).stem + '_'
-			string += '_'.join(map(lambda x: '%02d' % x, (now.month, now.day, now.hour, now.minute, now.second)))
+		# self.save_path = None
+		# if SAVE_PATH is not None:
+		# 	now = datetime.datetime.now()
+		# 	string = pathlib.Path(os.environ['ROUTES']).stem + '_'
+		# 	string += '_'.join(map(lambda x: '%02d' % x, (now.month, now.day, now.hour, now.minute, now.second)))
 
-			print (string)
+		# 	print (string)
 
-			self.save_path = pathlib.Path(os.environ['SAVE_PATH']) / string
-			self.save_path.mkdir(parents=True, exist_ok=False)
+		# 	self.save_path = pathlib.Path(os.environ['SAVE_PATH']) / string
+		# 	self.save_path.mkdir(parents=True, exist_ok=False)
 
-			(self.save_path / 'rgb').mkdir()
+		# 	(self.save_path / 'rgb').mkdir()
 
 	def _init(self):
 		self._route_planner = RoutePlanner(4.0, 50.0)
 		self._route_planner.set_route(self._global_plan, True)
 
 		self.initialized = True
+
+		super()._init() # jxy add
 
 	def _get_position(self, tick_data):
 		gps = tick_data['gps']
@@ -115,7 +127,15 @@ class CILRSAgent(autonomous_agent.AutonomousAgent):
 					'type': 'sensor.speedometer',
 					'reading_frequency': 20,
 					'id': 'speed'
-					}
+					},
+				# jxy: addition
+				{
+					'type': 'sensor.camera.semantic_segmentation',
+					'x': 0.0, 'y': 0.0, 'z': 100.0,
+					'roll': 0.0, 'pitch': -90.0, 'yaw': 0.0,
+					'width': 512, 'height': 512, 'fov': 5 * 10.0,
+					'id': 'map'
+					},
 				]
 
 	def tick(self, input_data):
@@ -143,6 +163,29 @@ class CILRSAgent(autonomous_agent.AutonomousAgent):
 		next_wp, next_cmd = self._route_planner.run_step(pos)
 		result['next_command'] = next_cmd.value
 
+		# jxy addition:
+		result['gps'] = pos
+
+		theta = compass + np.pi/2
+		R = np.array([
+			[np.cos(theta), -np.sin(theta)],
+			[np.sin(theta), np.cos(theta)]
+			])
+
+		local_command_point = np.array([next_wp[0]-pos[0], next_wp[1]-pos[1]])
+		local_command_point = R.T.dot(local_command_point)
+		result['target_point'] = tuple(local_command_point)
+
+		result['far_command'] = next_cmd
+
+		result['R_pos_from_head'] = R
+		result['offset_pos'] = np.array([pos[0], pos[1]])
+
+		self._actors = self._world.get_actors()
+		self._traffic_lights = get_nearby_lights(self._vehicle, self._actors.filter('*traffic_light*'))
+		topdown = input_data['map'][1][:, :, 2]
+		topdown = draw_traffic_lights(topdown, self._vehicle, self._traffic_lights)
+		result['topdown'] = COLOR[CONVERTER[topdown]]
 		return result
 
 	@torch.no_grad()
@@ -172,6 +215,7 @@ class CILRSAgent(autonomous_agent.AutonomousAgent):
 			control.throttle = 0.0
 			control.brake = 0.0
 			
+			self.record_step(tick_data, control) # jxy: add
 			return control
 
 		gt_velocity = torch.FloatTensor([tick_data['speed']]).to('cuda', dtype=torch.float32)
@@ -200,6 +244,7 @@ class CILRSAgent(autonomous_agent.AutonomousAgent):
 			self.input_buffer['rgb_rear'].append(rgb_rear.to('cuda', dtype=torch.float32))
 			encoding.append(self.net.encoder(list(self.input_buffer['rgb_rear'])))
 
+		 # jxy: points_world is none in cilrs
 		steer, throttle, brake, velocity = self.net(encoding, gt_velocity, command)
 
 		steer = steer.squeeze(0).item()
@@ -214,15 +259,110 @@ class CILRSAgent(autonomous_agent.AutonomousAgent):
 		control.throttle = throttle
 		control.brake = brake
 
-		if SAVE_PATH is not None and self.step % 10 == 0:
-			self.save(tick_data)
+		if HAS_DISPLAY: # jxy: change
+			debug_display(tick_data, control.steer, control.throttle, control.brake, self.step)
 
+		self.record_step(tick_data, control) # jxy: add
 		return control
 
-	def save(self, tick_data):
-		frame = self.step // 10
+	# jxy: add record_step
+	def record_step(self, tick_data, control, pred_waypoint=[]):
+		# draw pred_waypoint
+		if len(pred_waypoint):
+			pred_waypoint[:,1] *= -1
+			pred_waypoint = tick_data['R_pos_from_head'].dot(pred_waypoint.T).T
+		self._route_planner.run_step2(pred_waypoint, is_gps=False, store=False) # metadata['wp_1'] relative to ego head (as y)
+		# addition: from leaderboard/team_code/auto_pilot.py
+		speed = tick_data['speed']
+		self._recorder_tick(control) # trjs
+		ego_bbox = self.gather_info() # metrics
+		self._route_planner.run_step2(ego_bbox + tick_data['offset_pos'], is_gps=True, store=False)
+		self._route_planner.show_route()
 
-		Image.fromarray(tick_data['rgb']).save(self.save_path / 'rgb' / ('%04d.png' % frame))
+		if self.save_path is not None and self.step % self.record_every_n_step == 0:
+			self.save(control.steer, control.throttle, control.brake, tick_data)
 
-	def destroy(self):
-		del self.net
+
+# jxy: mv save in AgentSaver & rm destroy
+class AgentSaver(Saver):
+	def __init__(self, path_to_conf_file, dict_, list_):
+		self.config_path = path_to_conf_file
+
+		# jxy: according to sensor or save_path
+		self.rgb_list = ['rgb', 'rgb_left', 'rgb_right', 'rgb_rear', 'topdown', ] # 'bev', 
+		self.add_img = [] # 'flow', 'out', 
+		self.lidar_list = [] # 'lidar_0', 'lidar_1',
+		self.dir_names = self.rgb_list + self.add_img + self.lidar_list + ['pid_metadata']
+
+		super().__init__(dict_, list_)
+
+	def run(self): # jxy: according to init_ads
+		self.config = GlobalConfig()
+
+		super().run()
+
+	def _save(self, tick_data):	
+		# addition
+		# save_action_based_measurements = tick_data['save_action_based_measurements']
+		self.save_path = tick_data['save_path']
+		if not (self.save_path / 'ADS_log.csv' ).exists():
+			# addition: generate dir for every total_i
+			self.save_path.mkdir(parents=True, exist_ok=True)
+			for dir_name in self.dir_names:
+				(self.save_path / dir_name).mkdir(parents=True, exist_ok=False)
+
+			# according to self.save data_row_list
+			title_row = ','.join(
+				['frame_id', 'far_command', 'speed', 'steering', 'throttle', 'brake',] + \
+				self.dir_names
+			)
+			with (self.save_path / 'ADS_log.csv' ).open("a") as f_out:
+				f_out.write(title_row+'\n')
+
+		self.step = tick_data['frame']
+		self.save(tick_data['steer'],tick_data['throttle'],tick_data['brake'], tick_data)
+
+	# addition: modified from leaderboard/team_code/auto_pilot.py
+	def save(self, steer, throttle, brake, tick_data):
+		# frame = self.step // 10
+		frame = self.step
+
+		# 'gps' 'thetas'
+		pos = tick_data['gps']
+		speed = tick_data['speed']
+		far_command = tick_data['far_command']
+		data_row_list = [frame, far_command.name, speed, steer, throttle, brake,]
+
+		if frame >= self.config.seq_len: # jxy: according to run_step
+			# images
+			for rgb_name in self.rgb_list + self.add_img:
+				path_ = self.save_path / rgb_name / ('%04d.png' % frame)
+				Image.fromarray(tick_data[rgb_name]).save(path_)
+				data_row_list.append(str(path_))
+			# lidar
+			for i, rgb_name in enumerate(self.lidar_list):
+				path_ = self.save_path / rgb_name / ('%04d.png' % frame)
+				Image.fromarray(cm.gist_earth(tick_data['lidar_processed'][0][0, i], bytes=True)).save(path_)
+				data_row_list.append(str(path_))
+
+			# pid_metadata
+			pid_metadata = tick_data['pid_metadata']
+			path_ = self.save_path / 'pid_metadata' / ('%04d.json' % frame)
+			outfile = open(path_, 'w')
+			json.dump(pid_metadata, outfile, indent=4)
+			outfile.close()
+			data_row_list.append(str(path_))
+
+		# collection
+		data_row = ','.join([str(i) for i in data_row_list])
+		with (self.save_path / 'ADS_log.csv' ).open("a") as f_out:
+			f_out.write(data_row+'\n')
+
+
+	# def save(self, tick_data):
+	# 	frame = self.step // 10
+
+	# 	Image.fromarray(tick_data['rgb']).save(self.save_path / 'rgb' / ('%04d.png' % frame))
+
+	# def destroy(self):
+	# 	del self.net
