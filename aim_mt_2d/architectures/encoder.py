@@ -43,7 +43,7 @@ class ImageCNN(nn.Module):
         for x in inputs:
             if self.normalize:
                 x = normalize_imagenet(x)
-            net, inter = self.features(x)
+            net, inter = self.features(x), x # TODO: jxy
             c += self.fc(net)
             c_inter += inter
         return c, c_inter

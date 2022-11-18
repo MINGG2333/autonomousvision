@@ -9,10 +9,6 @@ HAS_DISPLAY = int(os.environ.get('HAS_DISPLAY', 0))
 
 def debug_display(tick_data, steer, throttle, brake, step):
     # modification
-
-    # rgb = np.hstack((tick_data['rgb_left'], tick_data['rgb'], tick_data['rgb_right']))
-
-
     _rgb = Image.fromarray(tick_data['rgb'])
     # _draw_rgb = ImageDraw.Draw(_rgb)
     # _draw_rgb.ellipse((target_cam[0]-3,target_cam[1]-3,target_cam[0]+3,target_cam[1]+3), (255, 255, 255))
@@ -22,8 +18,13 @@ def debug_display(tick_data, steer, throttle, brake, step):
     #     y = (y + 1) / 2 * 144
 
     # _draw_rgb.ellipse((x-2, y-2, x+2, y+2), (0, 0, 255))
-
-    _combined = Image.fromarray(np.hstack([tick_data['rgb_left'], _rgb, tick_data['rgb_right']]))
+    hstack_img = []
+    if 'rgb_left' in tick_data:
+        hstack_img.append(tick_data['rgb_left'])
+    hstack_img.append(_rgb)
+    if 'rgb_right' in tick_data:
+        hstack_img.append(tick_data['rgb_right'])
+    _combined = Image.fromarray(np.hstack(hstack_img))
     _combined = _combined.resize((int(256 / _combined.size[1] * _combined.size[0]), 256))
 
     _topdown = Image.fromarray(tick_data['topdown'])
