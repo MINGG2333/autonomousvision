@@ -92,7 +92,21 @@ class MultiTaskImageNetwork(nn.Module):
         throttle = self.speed_controller.step(delta)
         throttle = np.clip(throttle, 0.0, 0.75)
         throttle = throttle if not brake else 0.0
-        return steer, throttle, brake
+
+        metadata = {
+            'speed': float(speed.astype(np.float64)),
+            'steer': float(steer),
+            'throttle': float(throttle),
+            'brake': float(brake),
+            'wp_2': tuple(waypoints[1].astype(np.float64)),
+            'wp_1': tuple(waypoints[0].astype(np.float64)),
+            'desired_speed': float(desired_speed.astype(np.float64)),
+            'angle': float(angle.astype(np.float64)),
+            'aim': tuple(aim.astype(np.float64)),
+            'delta': float(delta.astype(np.float64)),
+        }
+
+        return steer, throttle, brake, metadata, waypoints
 
 class PIDController(object):
     def __init__(self, K_P=1.0, K_I=0.0, K_D=0.0, n=20):
