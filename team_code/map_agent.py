@@ -3,8 +3,12 @@ from PIL import Image, ImageDraw
 
 from srunner.scenariomanager.carla_data_provider import CarlaDataProvider
 
-from team_code.base_agent import BaseAgent
+from base_agent import BaseAgent # jxy: rm team_code.
 from team_code.planner import RoutePlanner
+
+# jxy: addition
+from carla_project.src.common import CONVERTER, COLOR
+
 
 def get_entry_point():
     return 'MapAgent'
@@ -23,8 +27,8 @@ class MapAgent(BaseAgent):
 
         return result
 
-    def set_global_plan(self, global_plan_gps, global_plan_world_coord):
-        super().set_global_plan(global_plan_gps, global_plan_world_coord)
+    def set_global_plan(self, global_plan_gps, global_plan_world_coord, sample_factor=1):
+        super().set_global_plan(global_plan_gps, global_plan_world_coord, sample_factor)
 
         self._plan_HACK = global_plan_world_coord
         self._plan_gps_HACK = global_plan_gps
@@ -32,8 +36,8 @@ class MapAgent(BaseAgent):
     def _init(self):
         super()._init()
 
-        self._vehicle = CarlaDataProvider.get_hero_actor()
-        self._world = self._vehicle.get_world()
+        # self._vehicle = CarlaDataProvider.get_hero_actor()
+        # self._world = self._vehicle.get_world()
 
         self._waypoint_planner = RoutePlanner(4.0, 50)
         self._waypoint_planner.set_route(self._plan_gps_HACK, True)
@@ -50,7 +54,7 @@ class MapAgent(BaseAgent):
         topdown = draw_stop_signs(topdown, self._vehicle, self._stop_signs)
 
         result = super().tick(input_data)
-        result['topdown'] = topdown
+        result['topdown'] = COLOR[CONVERTER[topdown]] # jxy for visual
 
         return result
 

@@ -10,7 +10,7 @@ import cv2
 import carla
 from PIL import Image
 
-from team_code.map_agent import MapAgent
+from map_agent import MapAgent # jxy: rm team_code.
 from team_code.pid_controller import PIDController
 
 
@@ -43,6 +43,8 @@ daytimes = {
 
 WEATHERS_IDS = list(WEATHERS)
 
+# jxy: addition; (add display.py and fix RoutePlanner.py)
+from team_code.display import HAS_DISPLAY, Saver, debug_display
 
 def get_entry_point():
     return 'AutoPilot'
@@ -84,9 +86,6 @@ class AutoPilot(MapAgent):
     PROXIMITY_THRESHOLD = 30.0  # meters
     SPEED_THRESHOLD = 0.1
     WAYPOINT_STEP = 1.0  # meters
-
-    def setup(self, path_to_conf_file):
-        super().setup(path_to_conf_file)
 
     def _init(self):
         super()._init()
@@ -183,12 +182,41 @@ class AutoPilot(MapAgent):
         control.throttle = throttle
         control.brake = float(brake)
 
-        # don't save data while evaluating
-        if self.step % 10 == 0 and self.save_path is not None:
-            data = self.tick(input_data)
-            self.save(far_node, near_command, steer, throttle, brake, target_speed, data)
+        tick_data = self.tick(input_data)
+        # jxy addition:
+        tick_data['gps'] = gps
+        tick_data['far_command'] = near_command
 
+        theta = compass + np.pi/2
+        R = np.array([
+            [np.cos(theta), -np.sin(theta)],
+            [np.sin(theta), np.cos(theta)]
+            ])
+        tick_data['R_pos_from_head'] = R
+        tick_data['offset_pos'] = np.array([gps[0], gps[1]])
+
+        if HAS_DISPLAY: # jxy: change
+            debug_display(tick_data, control.steer, control.throttle, control.brake, self.step)
+
+        self.record_step(tick_data, control) # jxy: add
         return control
+
+    # jxy: add record_step
+    def record_step(self, tick_data, control, pred_waypoint=[]):
+        # draw pred_waypoint
+        if len(pred_waypoint):
+            pred_waypoint[:,1] *= -1
+            pred_waypoint = tick_data['R_pos_from_head'].dot(pred_waypoint.T).T
+        self._waypoint_planner.run_step2(pred_waypoint, is_gps=False, store=False) # metadata['wp_1'] relative to ego head (as y)
+        # addition: from leaderboard/team_code/auto_pilot.py
+        speed = tick_data['speed']
+        self._recorder_tick(control) # trjs
+        ego_bbox = self.gather_info() # metrics
+        self._waypoint_planner.run_step2(ego_bbox + tick_data['offset_pos'], is_gps=True, store=False)
+        self._waypoint_planner.show_route()
+
+        if self.save_path is not None and self.step % self.record_every_n_step == 0:
+            self.save(control.steer, control.throttle, control.brake, tick_data)
 
     def _should_brake(self):
         actors = self._world.get_actors()

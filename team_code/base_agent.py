@@ -16,6 +16,8 @@ from PIL import Image, ImageDraw
 
 SAVE_PATH = os.environ.get('SAVE_PATH', None)
 
+# jxy: addition
+from team_code.display import HAS_DISPLAY, Saver, debug_display
 
 class BaseAgent(autonomous_agent.AutonomousAgent):
     def setup(self, path_to_conf_file):
@@ -25,6 +27,11 @@ class BaseAgent(autonomous_agent.AutonomousAgent):
         self.wall_start = time.time()
         self.initialized = False
 
+        return AgentSaver
+
+        # jxy: add return AgentSaver and init_ads (setup keep 5 lines); rm save_path;
+    def init_ads(self, path_to_conf_file):
+
         self._sensor_data = {
             'width': 400,
             'height': 300,
@@ -33,31 +40,31 @@ class BaseAgent(autonomous_agent.AutonomousAgent):
 
         self.weather_id = None
 
-        self.save_path = None
+        # self.save_path = None
 
-        if SAVE_PATH is not None:
-            now = datetime.datetime.now()
-            string = pathlib.Path(os.environ['ROUTES']).stem + '_'
-            string += '_'.join(map(lambda x: '%02d' % x, (now.month, now.day, now.hour, now.minute, now.second)))
+        # if SAVE_PATH is not None:
+        #     now = datetime.datetime.now()
+        #     string = pathlib.Path(os.environ['ROUTES']).stem + '_'
+        #     string += '_'.join(map(lambda x: '%02d' % x, (now.month, now.day, now.hour, now.minute, now.second)))
 
-            print (string)
+        #     print (string)
 
-            self.save_path = pathlib.Path(os.environ['SAVE_PATH']) / string
-            self.save_path.mkdir(parents=True, exist_ok=False)
+        #     self.save_path = pathlib.Path(os.environ['SAVE_PATH']) / string
+        #     self.save_path.mkdir(parents=True, exist_ok=False)
             
-            for sensor in self.sensors():
-                if hasattr(sensor, 'save') and sensor['save']:
-                    (self.save_path / sensor['id']).mkdir()
+        #     for sensor in self.sensors():
+        #         if hasattr(sensor, 'save') and sensor['save']:
+        #             (self.save_path / sensor['id']).mkdir()
 
-            (self.save_path / 'measurements').mkdir(parents=True, exist_ok=True)
-            (self.save_path / 'lidar').mkdir(parents=True, exist_ok=True)
-            (self.save_path / 'lidar_360').mkdir(parents=True, exist_ok=True)
-            (self.save_path / 'topdown').mkdir(parents=True, exist_ok=True)
+        #     (self.save_path / 'measurements').mkdir(parents=True, exist_ok=True)
+        #     (self.save_path / 'lidar').mkdir(parents=True, exist_ok=True)
+        #     (self.save_path / 'lidar_360').mkdir(parents=True, exist_ok=True)
+        #     (self.save_path / 'topdown').mkdir(parents=True, exist_ok=True)
 
-            for pos in ['front', 'left', 'right', 'rear']:
-                for sensor_type in ['rgb', 'seg', 'depth']:
-                    name = sensor_type + '_' + pos
-                    (self.save_path / name).mkdir()
+        #     for pos in ['front', 'left', 'right', 'rear']:
+        #         for sensor_type in ['rgb', 'seg', 'depth']:
+        #             name = sensor_type + '_' + pos
+        #             (self.save_path / name).mkdir()
 
     def _init(self):
         self._command_planner = RoutePlanner(7.5, 25.0, 257)
@@ -69,13 +76,15 @@ class BaseAgent(autonomous_agent.AutonomousAgent):
         
         self._sensors = self.sensor_interface._sensors_objects
 
+        super()._init() # jxy add
+
     def _get_position(self, gps):
         gps = (gps - self._command_planner.mean) * self._command_planner.scale
 
         return gps
 
     def sensors(self):
-        if SAVE_PATH is not None:
+        if True:
             return [
                 {
                     'type': 'sensor.camera.rgb',
@@ -251,6 +260,7 @@ class BaseAgent(autonomous_agent.AutonomousAgent):
         depth_rear       = cv2.cvtColor(input_data['depth_rear'][1][:, :, :3], cv2.COLOR_BGR2RGB)
 
         return {
+                'rgb': rgb_front,
                 'rgb_front': rgb_front,
                 'seg_front': seg['front'],
                 'depth_front': depth_front,
@@ -599,42 +609,258 @@ class BaseAgent(autonomous_agent.AutonomousAgent):
         calibration[0, 0] = calibration[1, 1] = sensor["width"] / (2.0 * np.tan(sensor["fov"] * np.pi / 360.0))
         return calibration
 
-    def save(self, far_node, near_command, steer, throttle, brake, target_speed, tick_data):
-        frame = self.step // 10
+# jxy: mv save in AgentSaver & rm destroy
+class AgentSaver(Saver):
+    def __init__(self, path_to_conf_file, dict_, list_):
+        self.config_path = path_to_conf_file
 
-        pos = self._get_position(tick_data['gps'])
-        theta = tick_data['compass']
+        # jxy: according to sensor
+        self._sensor_data = {
+            'width': 400,
+            'height': 300,
+            'fov': 100
+        }
+        self.rgb_list = [
+            sensor['id'] for sensor in self.sensors() if 'camera' in sensor['type'] and 'map' not in sensor['id']
+        ] + ['topdown'] # 'bev', 
+        self.add_img = [] # 'flow', 'out', 
+        self.lidar_list = [] # 'lidar_0', 'lidar_1',
+        self.dir_names = self.rgb_list + self.add_img + self.lidar_list + ['pid_metadata']
+
+        super().__init__(dict_, list_)
+
+    def run(self): # jxy: according to init_ads
+
+        super().run()
+
+    def _save(self, tick_data):    
+        # addition
+        # save_action_based_measurements = tick_data['save_action_based_measurements']
+        self.save_path = tick_data['save_path']
+        if not (self.save_path / 'ADS_log.csv' ).exists():
+            # addition: generate dir for every total_i
+            self.save_path.mkdir(parents=True, exist_ok=True)
+            for dir_name in self.dir_names:
+                (self.save_path / dir_name).mkdir(parents=True, exist_ok=False)
+
+            # according to self.save data_row_list
+            title_row = ','.join(
+                ['frame_id', 'far_command', 'speed', 'steering', 'throttle', 'brake',] + \
+                self.dir_names
+            )
+            with (self.save_path / 'ADS_log.csv' ).open("a") as f_out:
+                f_out.write(title_row+'\n')
+
+        self.step = tick_data['frame']
+        self.save(tick_data['steer'],tick_data['throttle'],tick_data['brake'], tick_data)
+
+    # addition: modified from leaderboard/team_code/auto_pilot.py
+    def save(self, steer, throttle, brake, tick_data):
+        # frame = self.step // 10
+        frame = self.step
+
+        # 'gps' 'thetas'
+        pos = tick_data['gps']
         speed = tick_data['speed']
+        far_command = tick_data['far_command']
+        data_row_list = [frame, far_command.name, speed, steer, throttle, brake,]
 
-        data = {
-                'x': pos[0],
-                'y': pos[1],
-                'theta': theta,
-                'speed': speed,
-                'target_speed': target_speed,
-                'x_command': far_node[0],
-                'y_command': far_node[1],
-                'command': near_command.value,
-                'steer': steer,
-                'throttle': throttle,
-                'brake': brake,
-                'weather': self.weather_id,
-                'junction':         self.junction,
-                'vehicle_hazard':   self.vehicle_hazard,
-                'light_hazard':     self.traffic_light_hazard,
-                'walker_hazard':    self.walker_hazard,
-                'stop_sign_hazard': self.stop_sign_hazard,
-                'angle':            self.angle
-                }
+        if frame >= 0: # jxy: according to run_step
+            # images
+            for rgb_name in self.rgb_list + self.add_img:
+                path_ = self.save_path / rgb_name / ('%04d.png' % frame)
+                Image.fromarray(tick_data[rgb_name]).save(path_)
+                data_row_list.append(str(path_))
+            # lidar
+            for i, rgb_name in enumerate(self.lidar_list):
+                path_ = self.save_path / rgb_name / ('%04d.png' % frame)
+                Image.fromarray(cm.gist_earth(tick_data['lidar_processed'][0][0, i], bytes=True)).save(path_)
+                data_row_list.append(str(path_))
 
-        for sensor in self.sensors():
-            if 'camera' in sensor['type'] and 'map' not in sensor['id']:
-                Image.fromarray(tick_data[sensor['id']]).save(self.save_path / sensor['id'] / ('%04d.png' % frame))
-            elif 'lidar' in sensor['type']:
-                np.save(self.save_path / 'lidar' / ('%04d.npy' % frame), tick_data['lidar'], allow_pickle=True)
-                np.save(self.save_path / 'lidar_360' / ('%04d.npy' % frame), tick_data['lidar_360'], allow_pickle=True)
+            # pid_metadata
+            pid_metadata = tick_data['pid_metadata']
+            path_ = self.save_path / 'pid_metadata' / ('%04d.json' % frame)
+            outfile = open(path_, 'w')
+            json.dump(pid_metadata, outfile, indent=4)
+            outfile.close()
+            data_row_list.append(str(path_))
 
-        Image.fromarray(tick_data['topdown']).save(self.save_path / 'topdown' / ('%04d.png' % frame))
-        measurements_file = self.save_path / 'measurements' / ('%04d.json' % frame)
-        with open(measurements_file, 'w') as f:
-            json.dump(data, f, indent=4)
+        # collection
+        data_row = ','.join([str(i) for i in data_row_list])
+        with (self.save_path / 'ADS_log.csv' ).open("a") as f_out:
+            f_out.write(data_row+'\n')
+
+    def sensors(self):
+        return [
+            {
+                'type': 'sensor.camera.rgb',
+                'x': 1.3, 'y': 0.0, 'z': 2.3,
+                'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
+                'width': self._sensor_data['width'], 'height': self._sensor_data['height'], 'fov': self._sensor_data['fov'],
+                'id': 'rgb_front'
+            },
+            {
+                'type': 'sensor.camera.semantic_segmentation',
+                'x': 1.3, 'y': 0.0, 'z': 2.3,
+                'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
+                'width': self._sensor_data['width'], 'height': self._sensor_data['height'], 'fov': self._sensor_data['fov'],
+                'id': 'seg_front'
+            },
+            {
+                'type': 'sensor.camera.depth',
+                'x': 1.3, 'y': 0.0, 'z': 2.3,
+                'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
+                'width': self._sensor_data['width'], 'height': self._sensor_data['height'], 'fov': self._sensor_data['fov'],
+                'id': 'depth_front'
+            },
+            {
+                'type': 'sensor.camera.rgb',
+                'x': -1.3, 'y': 0.0, 'z': 2.3,
+                'roll': 0.0, 'pitch': 0.0, 'yaw': 180.0,
+                'width': self._sensor_data['width'], 'height': self._sensor_data['height'], 'fov': self._sensor_data['fov'],
+                'id': 'rgb_rear'
+            },
+            {
+                'type': 'sensor.camera.semantic_segmentation',
+                'x': -1.3, 'y': 0.0, 'z': 2.3,
+                'roll': 0.0, 'pitch': 0.0, 'yaw': 180.0,
+                'width': self._sensor_data['width'], 'height': self._sensor_data['height'], 'fov': self._sensor_data['fov'],
+                'id': 'seg_rear'
+            },
+            {
+                'type': 'sensor.camera.depth',
+                'x': -1.3, 'y': 0.0, 'z': 2.3,
+                'roll': 0.0, 'pitch': 0.0, 'yaw': 180.0,
+                'width': self._sensor_data['width'], 'height': self._sensor_data['height'], 'fov': self._sensor_data['fov'],
+                'id': 'depth_rear'
+            },
+            {
+                'type': 'sensor.camera.rgb',
+                'x': 1.3, 'y': 0.0, 'z': 2.3,
+                'roll': 0.0, 'pitch': 0.0, 'yaw': -60.0,
+                'width': self._sensor_data['width'], 'height': self._sensor_data['height'], 'fov': self._sensor_data['fov'],
+                'id': 'rgb_left'
+            },
+            {
+                'type': 'sensor.camera.semantic_segmentation',
+                'x': 1.3, 'y': 0.0, 'z': 2.3,
+                'roll': 0.0, 'pitch': 0.0, 'yaw': -60.0,
+                'width': self._sensor_data['width'], 'height': self._sensor_data['height'], 'fov': self._sensor_data['fov'],
+                'id': 'seg_left'
+            },
+            {
+                'type': 'sensor.camera.depth',
+                'x': 1.3, 'y': 0.0, 'z': 2.3,
+                'roll': 0.0, 'pitch': 0.0, 'yaw': -60.0,
+                'width': self._sensor_data['width'], 'height': self._sensor_data['height'], 'fov': self._sensor_data['fov'],
+                'id': 'depth_left'
+            },
+            {
+                'type': 'sensor.camera.rgb',
+                'x': 1.3, 'y': 0.0, 'z': 2.3,
+                'roll': 0.0, 'pitch': 0.0, 'yaw': 60.0,
+                'width': self._sensor_data['width'], 'height': self._sensor_data['height'], 'fov': self._sensor_data['fov'],
+                'id': 'rgb_right'
+            },
+            {
+                'type': 'sensor.camera.semantic_segmentation',
+                'x': 1.3, 'y': 0.0, 'z': 2.3,
+                'roll': 0.0, 'pitch': 0.0, 'yaw': 60.0,
+                'width': self._sensor_data['width'], 'height': self._sensor_data['height'], 'fov': self._sensor_data['fov'],
+                'id': 'seg_right'
+            },
+            {
+                'type': 'sensor.camera.depth',
+                'x': 1.3, 'y': 0.0, 'z': 2.3,
+                'roll': 0.0, 'pitch': 0.0, 'yaw': 60.0,
+                'width': self._sensor_data['width'], 'height': self._sensor_data['height'], 'fov': self._sensor_data['fov'],
+                'id': 'depth_right'
+            },
+            {
+                'type': 'sensor.lidar.ray_cast',
+                'x': 1.3, 'y': 0.0, 'z': 2.5,
+                'roll': 0.0, 'pitch': 0.0, 'yaw': -90.0, 'rotation_frequency':10,
+                'id': 'lidar'
+            },
+            {
+                'type': 'sensor.lidar.ray_cast',
+                'x': 1.3, 'y': 0.0, 'z': 2.5,
+                'roll': 0.0, 'pitch': 0.0, 'yaw': -90.0, 'rotation_frequency':20,
+                'id': 'lidar_360'
+            },
+            {
+                'type': 'sensor.other.imu',
+                'x': 0.0, 'y': 0.0, 'z': 0.0,
+                'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
+                'sensor_tick': 0.05,
+                'id': 'imu'
+            },
+            {
+                'type': 'sensor.other.gnss',
+                'x': 0.0, 'y': 0.0, 'z': 0.0,
+                'roll': 0.0, 'pitch': 0.0, 'yaw': 0.0,
+                'sensor_tick': 0.01,
+                'id': 'gps'
+            },
+            {
+                'type': 'sensor.speedometer',
+                'reading_frequency': 20,
+                'id': 'speed'
+            }
+        ]
+
+    def _get_camera_to_car_calibration(self, sensor):
+        """returns the calibration matrix for the given sensor
+
+        Args:
+            sensor ([type]): [description]
+
+        Returns:
+            [type]: [description]
+        """        
+        calibration = np.identity(3)
+        calibration[0, 2] = sensor["width"] / 2.0
+        calibration[1, 2] = sensor["height"] / 2.0
+        calibration[0, 0] = calibration[1, 1] = sensor["width"] / (2.0 * np.tan(sensor["fov"] * np.pi / 360.0))
+        return calibration
+
+    # def save(self, far_node, near_command, steer, throttle, brake, target_speed, tick_data):
+    #     frame = self.step // 10
+
+    #     pos = self._get_position(tick_data['gps'])
+    #     theta = tick_data['compass']
+    #     speed = tick_data['speed']
+
+    #     data = {
+    #             'x': pos[0],
+    #             'y': pos[1],
+    #             'theta': theta,
+    #             'speed': speed,
+    #             'target_speed': target_speed,
+    #             'x_command': far_node[0],
+    #             'y_command': far_node[1],
+    #             'command': near_command.value,
+    #             'steer': steer,
+    #             'throttle': throttle,
+    #             'brake': brake,
+    #             'weather': self.weather_id,
+    #             'junction':         self.junction,
+    #             'vehicle_hazard':   self.vehicle_hazard,
+    #             'light_hazard':     self.traffic_light_hazard,
+    #             'walker_hazard':    self.walker_hazard,
+    #             'stop_sign_hazard': self.stop_sign_hazard,
+    #             'angle':            self.angle
+    #             }
+
+    #     for sensor in self.sensors():
+    #         if 'camera' in sensor['type'] and 'map' not in sensor['id']:
+    #             Image.fromarray(tick_data[sensor['id']]).save(self.save_path / sensor['id'] / ('%04d.png' % frame))
+    #         elif 'lidar' in sensor['type']:
+    #             np.save(self.save_path / 'lidar' / ('%04d.npy' % frame), tick_data['lidar'], allow_pickle=True)
+    #             np.save(self.save_path / 'lidar_360' / ('%04d.npy' % frame), tick_data['lidar_360'], allow_pickle=True)
+
+    #     Image.fromarray(tick_data['topdown']).save(self.save_path / 'topdown' / ('%04d.png' % frame))
+
+    #     measurements_file = self.save_path / 'measurements' / ('%04d.json' % frame)
+    #     with open(measurements_file, 'w') as f:
+    #         json.dump(data, f, indent=4)

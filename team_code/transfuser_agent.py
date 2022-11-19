@@ -25,6 +25,7 @@ SAVE_PATH = os.environ.get('SAVE_PATH', None)
 
 # jxy: addition; (add display.py and fix RoutePlanner.py)
 from team_code.display import HAS_DISPLAY, Saver, debug_display
+# addition from team_code/map_agent.py
 from carla_project.src.common import CONVERTER, COLOR
 from carla_project.src.carla_env import draw_traffic_lights, get_nearby_lights
 
@@ -141,7 +142,7 @@ class TransFuserAgent(autonomous_agent.AutonomousAgent):
 					'reading_frequency': 20,
 					'id': 'speed'
 					},
-				# jxy: addition
+				# jxy: addition from team_code/map_agent.py
 				{
 					'type': 'sensor.camera.semantic_segmentation',
 					'x': 0.0, 'y': 0.0, 'z': 100.0,
@@ -196,7 +197,7 @@ class TransFuserAgent(autonomous_agent.AutonomousAgent):
 
 		result['R_pos_from_head'] = R
 		result['offset_pos'] = np.array([pos[0], pos[1]])
-
+		# from team_code/map_agent.py:
 		self._actors = self._world.get_actors()
 		self._traffic_lights = get_nearby_lights(self._vehicle, self._actors.filter('*traffic_light*'))
 		topdown = input_data['map'][1][:, :, 2]
