@@ -73,12 +73,17 @@ class TransFuserAgent(autonomous_agent.AutonomousAgent):
 		# 	(self.save_path / 'lidar_1').mkdir(parents=True, exist_ok=False)
 		# 	(self.save_path / 'meta').mkdir(parents=True, exist_ok=False)
 
+	def destroy(self): # jxy mv before _init
+		torch.cuda.empty_cache()
+		super().destroy()
+
 	def _init(self):
 		self._route_planner = RoutePlanner(4.0, 50.0)
 		self._route_planner.set_route(self._global_plan, True)
 
 		self.initialized = True
 
+		del self.net # jxy from destroy to here, as twice destroy in a round
 		super()._init() # jxy add
 
 	def _get_position(self, tick_data):
@@ -194,7 +199,6 @@ class TransFuserAgent(autonomous_agent.AutonomousAgent):
 
 		# jxy addition:
 		result['far_command'] = next_cmd
-
 		result['R_pos_from_head'] = R
 		result['offset_pos'] = np.array([pos[0], pos[1]])
 		# from team_code/map_agent.py:
@@ -418,7 +422,4 @@ class AgentSaver(Saver):
 	# 	outfile = open(self.save_path / 'meta' / ('%04d.json' % frame), 'w')
 	# 	json.dump(self.pid_metadata, outfile, indent=4)
 	# 	outfile.close()
-
-	# def destroy(self):
-	# 	del self.net
 
