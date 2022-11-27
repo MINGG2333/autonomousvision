@@ -75,6 +75,19 @@ class TransFuserAgent(autonomous_agent.AutonomousAgent):
 
 	def destroy(self): # jxy mv before _init
 		torch.cuda.empty_cache()
+
+		# wp_real = np.array(self._route_planner.store_wps_real)
+		# import matplotlib.pyplot as plt
+		# fig = plt.figure('xy')
+		# ax = fig.add_subplot(1, 1, 1)
+		# ax.set_aspect(1)
+		# ax.xaxis.set_ticks_position('top')
+		# ax.invert_yaxis()
+		# ax.set(xlabel='x', ylabel='z in UE, y in Carla')
+		# ax.xaxis.set_label_position('top')
+		# ax.plot(wp_real.T[0], wp_real.T[1])
+		# plt.close()
+
 		super().destroy()
 
 	def _init(self):
