@@ -1,7 +1,5 @@
 import os
 import json
-import datetime
-import pathlib
 import time
 import cv2
 import carla
