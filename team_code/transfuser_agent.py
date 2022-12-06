@@ -72,6 +72,7 @@ class TransFuserAgent(autonomous_agent.AutonomousAgent):
 		# 	(self.save_path / 'meta').mkdir(parents=True, exist_ok=False)
 
 	def destroy(self): # jxy mv before _init
+		del self.net
 		torch.cuda.empty_cache()
 
 		# wp_real = np.array(self._route_planner.store_wps_real)
