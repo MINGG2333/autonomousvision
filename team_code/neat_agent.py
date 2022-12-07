@@ -94,6 +94,12 @@ class MultiTaskAgent(autonomous_agent.AutonomousAgent):
 		# 	(self.save_path / 'img').mkdir(parents=True, exist_ok=False)
 		# 	(self.save_path / 'meta').mkdir(parents=True, exist_ok=False)
 
+	def destroy(self): # jxy mv before _init
+		del self.net
+		torch.cuda.empty_cache()
+
+		super().destroy()
+
 	def _init(self):
 		self._route_planner = RoutePlanner(4.0, 50.0)
 		self._route_planner.set_route(self._global_plan, True)
@@ -488,7 +494,4 @@ class AgentSaver(Saver):
 	# 		if not os.path.isdir(self.save_path / 'flow' / str(frame).zfill(4)):
 	# 			os.mkdir(self.save_path / 'flow' / str(frame).zfill(4))
 	# 		flow_display.save(f"{self.save_path}/flow/{str(frame).zfill(4)}/{str(i)}.png")
-
-	# def destroy(self):
-	# 	del self.net
 

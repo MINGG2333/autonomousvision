@@ -95,7 +95,6 @@ class TransFuserAgent(autonomous_agent.AutonomousAgent):
 
 		self.initialized = True
 
-		del self.net # jxy from destroy to here, as twice destroy in a round
 		super()._init() # jxy add
 
 	def _get_position(self, tick_data):
